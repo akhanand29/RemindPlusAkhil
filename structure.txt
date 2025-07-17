@@ -1,0 +1,67 @@
+task-reminder-app/
+├── backend/
+│   ├── src/
+│   │   ├── controllers/
+│   │   │   ├── authController.js
+│   │   │   ├── taskController.js
+│   │   │   └── notificationController.js
+│   │   ├── middleware/
+│   │   │   ├── auth.js
+│   │   │   └── validation.js
+│   │   ├── models/
+│   │   │   ├── User.js
+│   │   │   ├── Task.js
+│   │   │   └── Notification.js
+│   │   ├── routes/
+│   │   │   ├── auth.js
+│   │   │   ├── tasks.js
+│   │   │   └── notifications.js
+│   │   ├── utils/
+│   │   │   ├── database.js
+│   │   │   ├── emailService.js
+│   │   │   └── pushNotifications.js
+│   │   └── app.js
+│   ├── package.json
+│   └── server.js
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── common/
+│   │   │   │   ├── Header.js
+│   │   │   │   ├── Button.js
+│   │   │   │   └── Input.js
+│   │   │   ├── task/
+│   │   │   │   ├── TaskItem.js
+│   │   │   │   ├── TaskList.js
+│   │   │   │   └── TaskForm.js
+│   │   │   └── auth/
+│   │   │       ├── LoginForm.js
+│   │   │       └── RegisterForm.js
+│   │   ├── screens/
+│   │   │   ├── HomeScreen.js
+│   │   │   ├── TaskListScreen.js
+│   │   │   ├── AddTaskScreen.js
+│   │   │   ├── EditTaskScreen.js
+│   │   │   ├── LoginScreen.js
+│   │   │   └── ProfileScreen.js
+│   │   ├── navigation/
+│   │   │   ├── AppNavigator.js
+│   │   │   └── AuthNavigator.js
+│   │   ├── services/
+│   │   │   ├── api.js
+│   │   │   ├── authService.js
+│   │   │   └── notificationService.js
+│   │   ├── store/
+│   │   │   ├── store.js
+│   │   │   ├── authSlice.js
+│   │   │   └── taskSlice.js
+│   │   ├── utils/
+│   │   │   ├── constants.js
+│   │   │   ├── helpers.js
+│   │   │   └── storage.js
+│   │   └── App.js
+│   ├── android/
+│   ├── ios/
+│   ├── package.json
+│   └── index.js
+└── README.md
