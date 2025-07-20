@@ -191,9 +191,18 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({ totalTasks, completed
 
 // Quick Stats Component
 const QuickStats: React.FC<QuickStatsProps> = ({ tasks, onStatPress }) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayString = today.toISOString().split('T')[0];
+  
   const pending = tasks.filter(t => !t.completed).length;
-  const overdue = tasks.filter(t => !t.completed && new Date(t.dueDate) < new Date()).length;
-  const today = tasks.filter(t => t.dueDate === new Date().toISOString().split('T')[0]).length;
+  const overdue = tasks.filter(t => {
+    if (t.completed) return false;
+    const [year, month, day] = t.dueDate.split('-');
+    const taskDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    return taskDate < today;
+  }).length;
+  const todayTasks = tasks.filter(t => t.dueDate === todayString).length;
 
   return (
     <View style={styles.quickStats}>
@@ -229,7 +238,7 @@ const QuickStats: React.FC<QuickStatsProps> = ({ tasks, onStatPress }) => {
         <View style={[styles.statIcon, { backgroundColor: colors.primary }]}>
           <Text style={styles.statIconText}>📅</Text>
         </View>
-        <Text style={styles.statNumber}>{today}</Text>
+        <Text style={styles.statNumber}>{todayTasks}</Text>
         <Text style={styles.statLabel}>Today</Text>
       </TouchableOpacity>
     </View>
@@ -239,7 +248,13 @@ const QuickStats: React.FC<QuickStatsProps> = ({ tasks, onStatPress }) => {
 // Task Card Component
 const TaskCard: React.FC<TaskCardProps> = ({ task, onToggle, onEdit, onDelete }) => {
   const scaleAnim = useRef(new Animated.Value(0)).current;
-  const isOverdue = !task.completed && new Date(task.dueDate) < new Date();
+  const isOverdue = !task.completed && (() => {
+  const [year, month, day] = task.dueDate.split('-');
+  const taskDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return taskDate < today;
+})();
 
   useEffect(() => {
     Animated.spring(scaleAnim, {
@@ -249,19 +264,32 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onToggle, onEdit, onDelete })
       useNativeDriver: true,
     }).start();
   }, []);
+const formatDate = (dateString: string): string => {
+  const [year, month, day] = dateString.split('-');
+  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Reset time to compare dates only
+  
+  const diffTime = date.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  if (diffDays === -1) return 'Yesterday';
+  if (diffDays < 0) return `${Math.abs(diffDays)} days ago`;
+  return `${diffDays} days left`;
+};
 
-  const formatDate = (dateString: string): string => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const diffTime = date.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Tomorrow';
-    if (diffDays === -1) return 'Yesterday';
-    if (diffDays < 0) return `${Math.abs(diffDays)} days ago`;
-    return `${diffDays} days left`;
-  };
+const formatFullDate = (dateString: string): string => {
+  const [year, month, day] = dateString.split('-');
+  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
+  });
+};
 
   return (
     <Animated.View style={[
@@ -297,12 +325,20 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onToggle, onEdit, onDelete })
           </View>
           
           <View style={styles.taskCardFooter}>
-            <Text style={[
-              styles.dueDateText,
-              isOverdue && styles.overdueText
-            ]}>
-              {formatDate(task.dueDate)}
-            </Text>
+            <View style={styles.dateContainer}>
+              <Text style={[
+                styles.dueDateText,
+                isOverdue && styles.overdueText
+              ]}>
+                {formatDate(task.dueDate)}
+              </Text>
+              <Text style={[
+                styles.fullDateText,
+                isOverdue && styles.overdueText
+              ]}>
+                {formatFullDate(task.dueDate)}
+              </Text>
+            </View>
             <View style={styles.taskActions}>
               <TouchableOpacity 
                 style={styles.editButton}
@@ -324,6 +360,8 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onToggle, onEdit, onDelete })
   );
 };
 
+// Additional styles for the improved date display
+
 // Tasks View Component
 const TasksView: React.FC<TasksViewProps> = ({ 
   tasks, 
@@ -334,19 +372,26 @@ const TasksView: React.FC<TasksViewProps> = ({
   onDelete 
 }) => {
   const getFilteredTasks = () => {
-    const today = new Date().toISOString().split('T')[0];
-    
-    switch (filter) {
-      case 'pending':
-        return tasks.filter(t => !t.completed);
-      case 'overdue':
-        return tasks.filter(t => !t.completed && new Date(t.dueDate) < new Date());
-      case 'today':
-        return tasks.filter(t => t.dueDate === today);
-      default:
-        return tasks;
-    }
-  };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayString = today.toISOString().split('T')[0];
+  
+  switch (filter) {
+    case 'pending':
+      return tasks.filter(t => !t.completed);
+    case 'overdue':
+      return tasks.filter(t => {
+        if (t.completed) return false;
+        const [year, month, day] = t.dueDate.split('-');
+        const taskDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        return taskDate < today;
+      });
+    case 'today':
+      return tasks.filter(t => t.dueDate === todayString);
+    default:
+      return tasks;
+  }
+};
 
   const getFilterTitle = () => {
     switch (filter) {
@@ -442,6 +487,26 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
   const [category, setCategory] = useState<string>('Personal');
   const [reminder, setReminder] = useState<boolean>(true);
 
+  // Helper function to get today's date in YYYY-MM-DD format
+  const getTodayDate = (): string => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+
+  // Helper function to format date for display
+   const formatDateForDisplay = (dateString: string): string => {
+  if (!dateString) return '';
+  const [year, month, day] = dateString.split('-');
+  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+};
+  
+  
   useEffect(() => {
     if (editingTask) {
       setTitle(editingTask.title);
@@ -454,7 +519,7 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
       setTitle('');
       setDescription('');
       setPriority('medium');
-      setDueDate('');
+      setDueDate(getTodayDate()); // Set today's date as default
       setCategory('Personal');
       setReminder(true);
     }
@@ -466,12 +531,19 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
       return;
     }
 
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dueDate)) {
+      Alert.alert('Error', 'Please enter a valid date in YYYY-MM-DD format');
+      return;
+    }
+
     const task: Task = {
       id: editingTask ? editingTask.id : Date.now().toString(),
       title: title.trim(),
       description: description.trim(),
       priority,
-      dueDate: dueDate || new Date().toISOString().split('T')[0],
+      dueDate: dueDate,
       category,
       reminder,
       completed: editingTask ? editingTask.completed : false,
@@ -480,6 +552,7 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
     onSave(task);
     onClose();
   };
+
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -555,13 +628,49 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
               </View>
             </View>
             
-            <TextInput
-              style={styles.input}
-              placeholder="Due date (YYYY-MM-DD)"
-              value={dueDate}
-              onChangeText={setDueDate}
-              placeholderTextColor={colors.gray}
-            />
+            <View style={styles.formSection}>
+              <Text style={styles.sectionTitle}>Due Date</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Due date (YYYY-MM-DD)"
+                value={dueDate}
+                onChangeText={setDueDate}
+                placeholderTextColor={colors.gray}
+              />
+              {dueDate && (
+                <Text style={styles.datePreview}>
+                  📅 {formatDateForDisplay(dueDate)}
+                </Text>
+              )}
+              <View style={styles.quickDateButtons}>
+                <TouchableOpacity 
+                  style={styles.quickDateButton}
+                  onPress={() => setDueDate(getTodayDate())}
+                >
+                  <Text style={styles.quickDateButtonText}>Today</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.quickDateButton}
+                  onPress={() => {
+                    const tomorrow = new Date();
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    setDueDate(tomorrow.toISOString().split('T')[0]);
+                  }}
+                >
+                  <Text style={styles.quickDateButtonText}>Tomorrow</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.quickDateButton}
+                  onPress={() => {
+                    const nextWeek = new Date();
+                    nextWeek.setDate(nextWeek.getDate() + 7);
+                    setDueDate(nextWeek.toISOString().split('T')[0]);
+                  }}
+                >
+                  <Text style={styles.quickDateButtonText}>Next Week</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             
             <View style={styles.formRow}>
               <Text style={styles.sectionTitle}>Reminder</Text>
@@ -587,6 +696,7 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
     </Modal>
   );
 };
+
 
 // Main App Component
 function App(): JSX.Element {
@@ -696,6 +806,41 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+    dateContainer: {
+    flexDirection: 'column',
+  },
+  fullDateText: {
+    fontSize: 10,
+    color: colors.gray,
+    fontWeight: '400',
+    marginTop: 2,
+  },
+  datePreview: {
+    fontSize: 14,
+    color: colors.primary,
+    marginTop: -10,
+    marginBottom: 10,
+    fontWeight: '500',
+  },
+  quickDateButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 5,
+  },
+  quickDateButton: {
+    backgroundColor: colors.light,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 2,
+    alignItems: 'center',
+  },
+  quickDateButtonText: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '500',
   },
   dashboardHeader: {
     backgroundColor: colors.primary,
