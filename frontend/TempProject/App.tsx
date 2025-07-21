@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   SafeAreaView,
   ScrollView,
@@ -29,6 +30,7 @@ interface Task {
   completed: boolean;
   category: string;
   reminder: boolean;
+  reminderTime?: '10min' | '15min' | '30min' | '1hour' | '24hour';
 }
 
 interface DashboardHeaderProps {
@@ -68,7 +70,33 @@ interface TasksViewProps {
   onDelete: (taskId: string) => void;
 }
 
-// Theme colors
+// ADD THESE NEW TYPES HERE - Push Notification Types
+interface PushNotificationToken {
+  os: string;
+  token: string;
+}
+
+interface PushNotificationObject {
+  foreground: boolean;
+  userInteraction: boolean;
+  message: string | object;
+  data: object;
+  badge: number;
+  alert: object;
+  sound: string;
+  finish: (fetchResult: string) => void;
+  id?: string;
+  title?: string;
+  userInfo?: any;
+  action?: string;
+}
+
+interface PushNotificationError {
+  message: string;
+  code?: number;
+}
+
+// Theme colors (rest of your code continues unchanged...)
 const colors = {
   primary: '#6C63FF',
   secondary: '#4ECDC4',
@@ -103,6 +131,7 @@ const initialTasks: Task[] = [
     completed: false,
     category: 'Work',
     reminder: true,
+    reminderTime: '1hour', // Add this line
   },
   {
     id: '2',
@@ -486,6 +515,12 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
   const [dueDate, setDueDate] = useState<string>('');
   const [category, setCategory] = useState<string>('Personal');
   const [reminder, setReminder] = useState<boolean>(true);
+  const [reminderTime, setReminderTime] = useState<'10min' | '15min' | '30min' | '1hour' | '24hour'>('30min');
+  
+  // Animation values
+  const slideAnim = useRef(new Animated.Value(300)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
   // Helper function to get today's date in YYYY-MM-DD format
   const getTodayDate = (): string => {
@@ -494,18 +529,60 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
   };
 
   // Helper function to format date for display
-   const formatDateForDisplay = (dateString: string): string => {
-  if (!dateString) return '';
-  const [year, month, day] = dateString.split('-');
-  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-};
+  const formatDateForDisplay = (dateString: string): string => {
+    if (!dateString) return '';
+    const [year, month, day] = dateString.split('-');
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
   
+  // Animate modal appearance
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          tension: 50,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 50,
+          friction: 8,
+          useNativeDriver: true,
+        })
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 300,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 0.8,
+          duration: 200,
+          useNativeDriver: true,
+        })
+      ]).start();
+    }
+  }, [visible]);
   
   useEffect(() => {
     if (editingTask) {
@@ -515,13 +592,15 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
       setDueDate(editingTask.dueDate);
       setCategory(editingTask.category);
       setReminder(editingTask.reminder);
+      setReminderTime(editingTask.reminderTime || '30min');
     } else {
       setTitle('');
       setDescription('');
       setPriority('medium');
-      setDueDate(getTodayDate()); // Set today's date as default
+      setDueDate(getTodayDate());
       setCategory('Personal');
       setReminder(true);
+      setReminderTime('30min');
     }
   }, [editingTask, visible]);
 
@@ -546,6 +625,7 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
       dueDate: dueDate,
       category,
       reminder,
+      reminderTime: reminder ? reminderTime : undefined,
       completed: editingTask ? editingTask.completed : false,
     };
 
@@ -555,149 +635,289 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
 
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              {editingTask ? 'Edit Task' : 'Add New Task'}
-            </Text>
-            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Text style={styles.closeButtonText}>×</Text>
+    <Modal visible={visible} animationType="none" transparent>
+      <Animated.View style={[styles.modalOverlay, { opacity: fadeAnim }]}>
+        <Animated.View style={[
+          styles.enhancedModalContent,
+          {
+            transform: [
+              { translateY: slideAnim },
+              { scale: scaleAnim }
+            ]
+          }
+        ]}>
+          {/* Enhanced Header */}
+          <View style={styles.enhancedModalHeader}>
+            <View style={styles.headerIconContainer}>
+              <Text style={styles.headerIcon}>✨</Text>
+            </View>
+            <View style={styles.headerTextContainer}>
+              <Text style={styles.enhancedModalTitle}>
+                {editingTask ? 'Edit Task' : 'Create New Task'}
+              </Text>
+              <Text style={styles.enhancedModalSubtitle}>
+                {editingTask ? 'Update your task details' : 'Let\'s get things done!'}
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.enhancedCloseButton} onPress={onClose}>
+              <Text style={styles.enhancedCloseButtonText}>×</Text>
             </TouchableOpacity>
           </View>
           
-          <ScrollView style={styles.modalBody}>
-            <TextInput
-              style={styles.input}
-              placeholder="Task title"
-              value={title}
-              onChangeText={setTitle}
-              placeholderTextColor={colors.gray}
-            />
+          <ScrollView style={styles.enhancedModalBody} showsVerticalScrollIndicator={false}>
+            {/* Task Title Input */}
+            <View style={styles.enhancedInputContainer}>
+              <Text style={styles.enhancedInputLabel}>Task Title</Text>
+              <TextInput
+                style={styles.enhancedInput}
+                placeholder="What needs to be done?"
+                value={title}
+                onChangeText={setTitle}
+                placeholderTextColor={colors.gray}
+                autoFocus
+              />
+              <View style={styles.inputUnderline} />
+            </View>
             
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Description (optional)"
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={3}
-              placeholderTextColor={colors.gray}
-            />
+            {/* Task Description Input */}
+            <View style={styles.enhancedInputContainer}>
+              <Text style={styles.enhancedInputLabel}>Description</Text>
+              <TextInput
+                style={[styles.enhancedInput, styles.enhancedTextArea]}
+                placeholder="Add some details about this task..."
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={4}
+                placeholderTextColor={colors.gray}
+              />
+              <View style={styles.inputUnderline} />
+            </View>
             
-            <View style={styles.formSection}>
-              <Text style={styles.sectionTitle}>Priority</Text>
-              <View style={styles.priorityButtons}>
+            {/* Priority Selection */}
+            <View style={styles.enhancedFormSection}>
+              <Text style={styles.enhancedSectionTitle}>Priority Level</Text>
+              <View style={styles.enhancedPriorityContainer}>
                 {(['low', 'medium', 'high'] as const).map((p) => (
                   <TouchableOpacity
                     key={p}
                     style={[
-                      styles.priorityButton,
-                      { backgroundColor: priorityColors[p] },
-                      priority === p && styles.selectedPriority,
+                      styles.enhancedPriorityButton,
+                      priority === p && styles.enhancedSelectedPriority,
                     ]}
                     onPress={() => setPriority(p)}
+                    activeOpacity={0.7}
                   >
-                    <Text style={styles.priorityButtonText}>{p.toUpperCase()}</Text>
+                    <View style={[
+                      styles.priorityIndicator,
+                      { backgroundColor: priorityColors[p] }
+                    ]} />
+                    <Text style={[
+                      styles.enhancedPriorityText,
+                      priority === p && styles.enhancedSelectedPriorityText,
+                    ]}>
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
+                    </Text>
+                    {priority === p && (
+                      <Text style={styles.priorityCheckmark}>✓</Text>
+                    )}
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
             
-            <View style={styles.formSection}>
-              <Text style={styles.sectionTitle}>Category</Text>
-              <View style={styles.categoryButtons}>
-                {['Work', 'Personal', 'Health', 'Shopping'].map((c) => (
+            {/* Category Selection */}
+            <View style={styles.enhancedFormSection}>
+              <Text style={styles.enhancedSectionTitle}>Category</Text>
+              <View style={styles.enhancedCategoryContainer}>
+                {[
+                  { name: 'Work', icon: '💼' },
+                  { name: 'Personal', icon: '🏠' },
+                  { name: 'Health', icon: '🏥' },
+                  { name: 'Shopping', icon: '🛍️' }
+                ].map((c) => (
                   <TouchableOpacity
-                    key={c}
+                    key={c.name}
                     style={[
-                      styles.categoryButton,
-                      category === c && styles.selectedCategory,
+                      styles.enhancedCategoryButton,
+                      category === c.name && styles.enhancedSelectedCategory,
                     ]}
-                    onPress={() => setCategory(c)}
+                    onPress={() => setCategory(c.name)}
+                    activeOpacity={0.7}
                   >
+                    <Text style={styles.categoryIcon}>{c.icon}</Text>
                     <Text style={[
-                      styles.categoryButtonText,
-                      category === c && styles.selectedCategoryText,
+                      styles.enhancedCategoryText,
+                      category === c.name && styles.enhancedSelectedCategoryText,
                     ]}>
-                      {c}
+                      {c.name}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
             
-            <View style={styles.formSection}>
-              <Text style={styles.sectionTitle}>Due Date</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Due date (YYYY-MM-DD)"
-                value={dueDate}
-                onChangeText={setDueDate}
-                placeholderTextColor={colors.gray}
-              />
+            {/* Due Date */}
+            <View style={styles.enhancedFormSection}>
+              <Text style={styles.enhancedSectionTitle}>Due Date</Text>
+              <View style={styles.dateInputContainer}>
+                <TextInput
+                  style={styles.enhancedDateInput}
+                  placeholder="YYYY-MM-DD"
+                  value={dueDate}
+                  onChangeText={setDueDate}
+                  placeholderTextColor={colors.gray}
+                />
+                <Text style={styles.calendarIcon}>📅</Text>
+              </View>
               {dueDate && (
-                <Text style={styles.datePreview}>
-                  📅 {formatDateForDisplay(dueDate)}
+                <Text style={styles.enhancedDatePreview}>
+                  {formatDateForDisplay(dueDate)}
                 </Text>
               )}
-              <View style={styles.quickDateButtons}>
-                <TouchableOpacity 
-                  style={styles.quickDateButton}
-                  onPress={() => setDueDate(getTodayDate())}
-                >
-                  <Text style={styles.quickDateButtonText}>Today</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.quickDateButton}
-                  onPress={() => {
-                    const tomorrow = new Date();
-                    tomorrow.setDate(tomorrow.getDate() + 1);
-                    setDueDate(tomorrow.toISOString().split('T')[0]);
-                  }}
-                >
-                  <Text style={styles.quickDateButtonText}>Tomorrow</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.quickDateButton}
-                  onPress={() => {
-                    const nextWeek = new Date();
-                    nextWeek.setDate(nextWeek.getDate() + 7);
-                    setDueDate(nextWeek.toISOString().split('T')[0]);
-                  }}
-                >
-                  <Text style={styles.quickDateButtonText}>Next Week</Text>
-                </TouchableOpacity>
+              <View style={styles.enhancedQuickDateButtons}>
+                {[
+                  { label: 'Today', days: 0 },
+                  { label: 'Tomorrow', days: 1 },
+                  { label: 'Next Week', days: 7 }
+                ].map((option) => (
+                  <TouchableOpacity
+                    key={option.label}
+                    style={styles.enhancedQuickDateButton}
+                    onPress={() => {
+                      const targetDate = new Date();
+                      targetDate.setDate(targetDate.getDate() + option.days);
+                      setDueDate(targetDate.toISOString().split('T')[0]);
+                    }}
+                  >
+                    <Text style={styles.enhancedQuickDateText}>{option.label}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             </View>
             
-            <View style={styles.formRow}>
-              <Text style={styles.sectionTitle}>Reminder</Text>
-              <Switch
-                value={reminder}
-                onValueChange={setReminder}
-                trackColor={{ false: colors.gray, true: colors.primary }}
-                thumbColor={reminder ? colors.white : colors.light}
-              />
+            {/* Reminder Toggle */}
+            <View style={styles.enhancedFormSection}>
+              <View style={styles.enhancedReminderHeader}>
+                <View style={styles.reminderTitleContainer}>
+                  <Text style={styles.enhancedSectionTitle}>Reminder</Text>
+                  <Text style={styles.reminderSubtext}>Get notified before due date</Text>
+                </View>
+                <Switch
+                  value={reminder}
+                  onValueChange={setReminder}
+                  trackColor={{ false: '#E5E7EB', true: colors.primary }}
+                  thumbColor={reminder ? colors.white : '#9CA3AF'}
+                  ios_backgroundColor="#E5E7EB"
+                />
+              </View>
             </View>
+            
+            {/* Reminder Time Selection */}
+            {reminder && (
+              <View style={styles.enhancedFormSection}>
+                <Text style={styles.enhancedSectionTitle}>Reminder Time</Text>
+                <Text style={styles.reminderTimeSubtext}>How early should we remind you?</Text>
+                <View style={styles.enhancedReminderTimeContainer}>
+                  {[
+                    { value: '10min', label: '10 min before', icon: '⏰' },
+                    { value: '15min', label: '15 min before', icon: '⏰' },
+                    { value: '30min', label: '30 min before', icon: '🔔' },
+                    { value: '1hour', label: '1 hour before', icon: '⏰' },
+                    { value: '24hour', label: '1 day before', icon: '📆' },
+                  ].map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.enhancedReminderTimeButton,
+                        reminderTime === option.value && styles.enhancedSelectedReminderTime,
+                      ]}
+                      onPress={() => setReminderTime(option.value as any)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.reminderTimeIcon}>{option.icon}</Text>
+                      <Text style={[
+                        styles.enhancedReminderTimeText,
+                        reminderTime === option.value && styles.enhancedSelectedReminderTimeText,
+                      ]}>
+                        {option.label}
+                      </Text>
+                      {reminderTime === option.value && (
+                        <View style={styles.reminderTimeCheck}>
+                          <Text style={styles.reminderTimeCheckText}>✓</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
           </ScrollView>
           
-          <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+          {/* Enhanced Footer */}
+          <View style={styles.enhancedModalFooter}>
+            <TouchableOpacity style={styles.enhancedCancelButton} onPress={onClose}>
+              <Text style={styles.enhancedCancelButtonText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-              <Text style={styles.saveButtonText}>Save Task</Text>
+            <TouchableOpacity style={styles.enhancedSaveButton} onPress={handleSave}>
+              <View style={styles.saveButtonContent}>
+                <Text style={styles.enhancedSaveButtonText}>
+                  {editingTask ? 'Update Task' : 'Create Task'}
+                </Text>
+                <Text style={styles.saveButtonIcon}>✨</Text>
+              </View>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 };
+const scheduleNotification = (task: Task) => {
+  if (!task.reminder || !task.reminderTime) return;
+  
+  const reminderMinutes = {
+    '10min': 10,
+    '15min': 15,
+    '30min': 30,
+    '1hour': 60,
+    '24hour': 1440,
+  };
+  
+  const [year, month, day] = task.dueDate.split('-');
+  const dueDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  const notificationDate = new Date(dueDate.getTime() - (reminderMinutes[task.reminderTime] * 60 * 1000));
+  
+  // Only schedule if notification time is in the future
+if (notificationDate > new Date()) {
+    // Store the notification data locally using AsyncStorage
+    const notificationData = {
+      id: task.id,
+      title: "Task Reminder",
+      message: `Reminder: ${task.title} is due in ${task.reminderTime.replace('min', ' minutes').replace('hour', ' hour')}`,
+      scheduledTime: notificationDate.getTime(),
+      taskId: task.id
+    };
+    
+    // Save notification to AsyncStorage
+    try {
+      AsyncStorage.setItem(`notification_${task.id}`, JSON.stringify(notificationData));
+      console.log('Scheduled notification saved:', notificationData);
+    } catch (error) {
+      console.log('Error saving notification:', error);
+    }
+  }
+};
 
-
+const cancelNotification = async (taskId: string) => {
+  try {
+    await AsyncStorage.removeItem(`notification_${taskId}`);
+    console.log('Cancelled notification for task:', taskId);
+  } catch (error) {
+    console.log('Error cancelling notification:', error);
+  }
+};
+// Main App Component
 // Main App Component
 function App(): JSX.Element {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
@@ -706,6 +926,41 @@ function App(): JSX.Element {
   const [currentView, setCurrentView] = useState<'dashboard' | 'tasks'>('dashboard');
   const [tasksFilter, setTasksFilter] = useState<'all' | 'pending' | 'overdue' | 'today'>('all');
 
+  // Save tasks to AsyncStorage
+  const saveTasks = async (tasksToSave: Task[]) => {
+    try {
+      await AsyncStorage.setItem('tasks', JSON.stringify(tasksToSave));
+      console.log('Tasks saved to AsyncStorage');
+    } catch (error) {
+      console.log('Error saving tasks:', error);
+    }
+  };
+
+  // Load tasks from AsyncStorage
+  const loadTasks = async () => {
+    try {
+      const savedTasks = await AsyncStorage.getItem('tasks');
+      if (savedTasks) {
+        const parsedTasks = JSON.parse(savedTasks);
+        setTasks(parsedTasks);
+        console.log('Tasks loaded from AsyncStorage:', parsedTasks.length);
+      }
+    } catch (error) {
+      console.log('Error loading tasks:', error);
+    }
+  };
+
+  // Load tasks when app starts
+  useEffect(() => {
+    loadTasks();
+  }, []);
+
+  // Save tasks whenever tasks change
+  useEffect(() => {
+    if (tasks.length > 0 || tasks.length !== initialTasks.length) {
+      saveTasks(tasks);
+    }
+  }, [tasks]);
   const handleAddTask = (): void => {
     setEditingTask(null);
     setModalVisible(true);
@@ -718,9 +973,18 @@ function App(): JSX.Element {
 
   const handleSaveTask = (task: Task): void => {
     if (editingTask) {
+      // Cancel old notification if editing
+      if (editingTask.reminder && editingTask.reminderTime) {
+        cancelNotification(editingTask.id);
+      }
       setTasks(tasks.map(t => t.id === task.id ? task : t));
     } else {
       setTasks([...tasks, task]);
+    }
+    
+    // Schedule notification for new or updated tasks
+    if (task.reminder && task.reminderTime) {
+      scheduleNotification(task);
     }
   };
 
@@ -736,7 +1000,13 @@ function App(): JSX.Element {
       'Are you sure you want to delete this task?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', onPress: () => setTasks(tasks.filter(t => t.id !== taskId)) },
+        { 
+          text: 'Delete', 
+          onPress: () => {
+            cancelNotification(taskId);
+            setTasks(tasks.filter(t => t.id !== taskId));
+          } 
+        },
       ]
     );
   };
@@ -801,12 +1071,419 @@ function App(): JSX.Element {
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
   },
+    enhancedModalContent: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    width: width * 0.95,
+    maxHeight: height * 0.9,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.25,
+    shadowRadius: 25,
+    elevation: 25,
+  },
+  
+  enhancedModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  
+  headerIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: `${colors.primary}15`,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  
+  headerIcon: {
+    fontSize: 24,
+  },
+  
+  headerTextContainer: {
+    flex: 1,
+  },
+  
+  enhancedModalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.dark,
+    marginBottom: 4,
+  },
+  
+  enhancedModalSubtitle: {
+    fontSize: 14,
+    color: colors.gray,
+    fontWeight: '400',
+  },
+  
+  enhancedCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  enhancedCloseButtonText: {
+    fontSize: 20,
+    color: colors.gray,
+    fontWeight: '600',
+  },
+  
+  enhancedModalBody: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    maxHeight: height * 0.65,
+  },
+  
+  // Enhanced Input Styles
+  enhancedInputContainer: {
+    marginBottom: 24,
+  },
+  
+  enhancedInputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.dark,
+    marginBottom: 12,
+  },
+  
+  enhancedInput: {
+    fontSize: 16,
+    color: colors.dark,
+    paddingVertical: 16,
+    paddingHorizontal: 0,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+  },
+  
+  enhancedTextArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  
+  inputUnderline: {
+    height: 2,
+    backgroundColor: `${colors.primary}20`,
+    borderRadius: 1,
+    marginTop: 8,
+  },
+  
+  enhancedFormSection: {
+    marginBottom: 32,
+  },
+  
+  enhancedSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.dark,
+    marginBottom: 16,
+  },
+  
+  // Enhanced Priority Styles
+  enhancedPriorityContainer: {
+    gap: 12,
+  },
+  
+  enhancedPriorityButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  
+  enhancedSelectedPriority: {
+    backgroundColor: `${colors.primary}10`,
+    borderColor: colors.primary,
+  },
+  
+  priorityIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  
+  enhancedPriorityText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: colors.dark,
+    flex: 1,
+  },
+  
+  enhancedSelectedPriorityText: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  
+  priorityCheckmark: {
+    fontSize: 16,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  
+  // Enhanced Category Styles
+  enhancedCategoryContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  
+  enhancedCategoryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    minWidth: 100,
+  },
+  
+  enhancedSelectedCategory: {
+    backgroundColor: `${colors.primary}10`,
+    borderColor: colors.primary,
+  },
+  
+  categoryIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  
+  enhancedCategoryText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.dark,
+  },
+  
+  enhancedSelectedCategoryText: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  
+  // Enhanced Date Styles
+  dateInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  
+  enhancedDateInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.dark,
+    fontWeight: '500',
+  },
+  
+  calendarIcon: {
+    fontSize: 20,
+    marginLeft: 12,
+  },
+  
+  enhancedDatePreview: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '500',
+    marginTop: 12,
+    paddingLeft: 20,
+  },
+  
+  enhancedQuickDateButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
+  },
+  
+  enhancedQuickDateButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+  },
+  
+  enhancedQuickDateText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.gray,
+  },
+  
+  // Enhanced Reminder Styles
+  enhancedReminderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  
+  reminderTitleContainer: {
+    flex: 1,
+  },
+  
+  reminderSubtext: {
+    fontSize: 12,
+    color: colors.gray,
+    marginTop: 2,
+  },
+  
+  reminderTimeSubtext: {
+    fontSize: 14,
+    color: colors.gray,
+    marginBottom: 16,
+  },
+  
+  enhancedReminderTimeContainer: {
+    gap: 10,
+  },
+  
+  enhancedReminderTimeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  
+  enhancedSelectedReminderTime: {
+    backgroundColor: `${colors.primary}10`,
+    borderColor: colors.primary,
+  },
+  
+  reminderTimeIcon: {
+    fontSize: 16,
+    marginRight: 12,
+  },
+  
+  enhancedReminderTimeText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.dark,
+    flex: 1,
+  },
+  
+  enhancedSelectedReminderTimeText: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  
+  reminderTimeCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  reminderTimeCheckText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  
+  // Enhanced Footer Styles
+  enhancedModalFooter: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    gap: 12,
+  },
+  
+  enhancedCancelButton: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 16,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  enhancedCancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.gray,
+  },
+  
+  enhancedSaveButton: {
+    flex: 2,
+    paddingVertical: 16,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  saveButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  
+  enhancedSaveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.white,
+  },
+  
+  saveButtonIcon: {
+    fontSize: 16,
+  },
+  reminderTimeButtons: {
+  flexDirection: 'column',
+},
+reminderTimeButton: {
+  backgroundColor: colors.light,
+  paddingHorizontal: 15,
+  paddingVertical: 12,
+  borderRadius: 8,
+  marginBottom: 8,
+  alignItems: 'center',
+  borderWidth: 1,
+  borderColor: colors.light,
+},
+selectedReminderTime: {
+  backgroundColor: colors.primary,
+  borderColor: colors.primary,
+},
+reminderTimeButtonText: {
+  fontSize: 14,
+  color: colors.gray,
+  fontWeight: '500',
+},
+selectedReminderTimeText: {
+  color: colors.white,
+  fontWeight: '600',
+},
     dateContainer: {
     flexDirection: 'column',
   },
