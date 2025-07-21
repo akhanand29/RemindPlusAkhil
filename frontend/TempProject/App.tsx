@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import notifee, { TriggerType } from '@notifee/react-native';
 import {
   SafeAreaView,
   ScrollView,
@@ -873,7 +874,7 @@ const TaskFormModal: React.FC<TaskFormModalProps> = ({ visible, onClose, onSave,
     </Modal>
   );
 };
-const scheduleNotification = (task: Task) => {
+const scheduleNotification = async (task: Task) => {
   if (!task.reminder || !task.reminderTime) return;
   
   const reminderMinutes = {
@@ -889,32 +890,53 @@ const scheduleNotification = (task: Task) => {
   const notificationDate = new Date(dueDate.getTime() - (reminderMinutes[task.reminderTime] * 60 * 1000));
   
   // Only schedule if notification time is in the future
-if (notificationDate > new Date()) {
-    // Store the notification data locally using AsyncStorage
-    const notificationData = {
-      id: task.id,
-      title: "Task Reminder",
-      message: `Reminder: ${task.title} is due in ${task.reminderTime.replace('min', ' minutes').replace('hour', ' hour')}`,
-      scheduledTime: notificationDate.getTime(),
-      taskId: task.id
-    };
-    
-    // Save notification to AsyncStorage
+  if (notificationDate > new Date()) {
     try {
-      AsyncStorage.setItem(`notification_${task.id}`, JSON.stringify(notificationData));
-      console.log('Scheduled notification saved:', notificationData);
+      // Request permissions first
+      await notifee.requestPermission();
+      
+      // Create a channel for Android
+      const channelId = await notifee.createChannel({
+        id: 'task-reminders',
+        name: 'Task Reminders',
+        importance: 4,
+      });
+
+      // Schedule the notification
+      await notifee.createTriggerNotification(
+        {
+          id: task.id,
+          title: '📋 Task Reminder',
+          body: `${task.title} is due soon!`,
+          data: {
+            taskId: task.id,
+          },
+          android: {
+            channelId,
+            pressAction: {
+              id: 'default',
+            },
+          },
+        },
+        {
+          type: TriggerType.TIMESTAMP,
+          timestamp: notificationDate.getTime(),
+        },
+      );
+      
+      console.log(`✅ Scheduled notification for: ${task.title}`);
     } catch (error) {
-      console.log('Error saving notification:', error);
+      console.log('❌ Error scheduling notification:', error);
     }
   }
 };
 
 const cancelNotification = async (taskId: string) => {
   try {
-    await AsyncStorage.removeItem(`notification_${taskId}`);
-    console.log('Cancelled notification for task:', taskId);
+    await notifee.cancelNotification(taskId);
+    console.log('✅ Cancelled notification for task:', taskId);
   } catch (error) {
-    console.log('Error cancelling notification:', error);
+    console.log('❌ Error cancelling notification:', error);
   }
 };
 // Main App Component
@@ -935,6 +957,14 @@ function App(): JSX.Element {
       console.log('Error saving tasks:', error);
     }
   };
+  const requestNotificationPermissions = async () => {
+  try {
+    const settings = await notifee.requestPermission();
+    console.log('Permission status:', settings.authorizationStatus);
+  } catch (error) {
+    console.log('Permission error:', error);
+  }
+};
 
   // Load tasks from AsyncStorage
   const loadTasks = async () => {
@@ -949,11 +979,10 @@ function App(): JSX.Element {
       console.log('Error loading tasks:', error);
     }
   };
-
-  // Load tasks when app starts
-  useEffect(() => {
-    loadTasks();
-  }, []);
+useEffect(() => {
+  requestNotificationPermissions();
+  loadTasks();
+}, []);
 
   // Save tasks whenever tasks change
   useEffect(() => {
